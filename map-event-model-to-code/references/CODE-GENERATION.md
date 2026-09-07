@@ -1,57 +1,96 @@
-# Dart Code Generation Rules
+# Dart Vertical-Slice Code Generation
 
-This reference covers generating a Dart app skeleton from an Event Model table.
-Generated code uses `fmodel-dart`, `package:fmodel/fmodel.dart`, and
-`package:test`.
+This reference covers generating Dart code from an Event Model table. Generated
+code uses `fmodel-dart`, `package:fmodel/fmodel.dart`, and `package:test`.
 
-The output should be platform-neutral Dart. Generate in-memory repositories for
-runnable demos. Do not choose HTTP, database, queue, or deployment technology
-unless the user explicitly asks for it.
+The generated architecture is vertical-slice oriented:
 
-## 1. Package Shape
+- Shared domain contracts live under `bounded_contexts`.
+- Concrete slices live under the top-level `state_change`, `state_view`,
+  `automation`, and `translation` folders.
+- Generic runtime and adapter infrastructure lives under `platform`.
+- Cross-slice wiring lives under `composition`.
 
-For a new generated project, create the usual Dart package files and this code
-layout:
+The four slice category folders are direct children of `lib/`. Do not nest them
+inside bounded contexts.
+
+## 1. Target Package Shape
+
+For a new generated package, create this structure:
 
 ```text
 pubspec.yaml
 analysis_options.yaml
 lib/
-  domain.dart
-  application.dart
-  infrastructure.dart
-  fmodel.dart
-  src/
-    domain/
+  bounded_contexts/
+    <bounded_context>/
       api.dart
-      deciders/
-        {use_case}_decider.dart
-      views/
-        {entity}_view.dart
-    application/
-      {use_case}_aggregate.dart
-      {entity}_materialized_view.dart
-    infrastructure/
-      memory/
-        {use_case}_event_repository.dart
-        {entity}_view_repository.dart
+      value_objects.dart
+      events.dart
+      event_tags.dart
+      serialization.dart
+  state_change/
+    <use_case>/
+      command.dart
+      state.dart
+      errors.dart
+      decider.dart
+      repository.dart
+      aggregate.dart
+      service.dart
+      handler.dart
+      dto.dart
+      serialization.dart
+      module.dart
+      ui/
+  state_view/
+    <read_model>/
+      query.dart
+      state.dart
+      view.dart
+      repository.dart
+      service.dart
+      handler.dart
+      dto.dart
+      module.dart
+      ui/
+  automation/
+    <process_or_policy>/
+      saga.dart
+      publisher.dart
+      service.dart
+      handler.dart
+      module.dart
+  translation/
+    <external_boundary>/
+      dto.dart
+      mapper.dart
+      codec.dart
+      port.dart
+      adapter.dart
+      handler.dart
+      module.dart
+  composition/
+    app_services.dart
+    slice_registry.dart
+    vertical_slice.dart
+  platform/
+    event_store/
+    server/
 test/
-  fixtures.dart
-  support/
-    decider_test_dsl.dart
-    view_test_dsl.dart
-  domain/
-    {use_case}_decider_test.dart
-    {entity}_view_test.dart
-  application/
-    {use_case}_aggregate_test.dart
-    {entity}_materialized_view_test.dart
+  bounded_contexts/
+  state_change/
+  state_view/
+  automation/
+  translation/
+  platform/
 ```
 
-Use the same shape inside an existing Dart package, adapting names to local
-conventions and preserving existing barrel files.
+Only create concrete slice files that the model or user request calls for. For
+new repositories, create all four top-level category folders; if a category is
+empty and must be tracked in git, add a `.gitkeep`.
 
-Minimum `pubspec.yaml` dependencies:
+Minimum `pubspec.yaml` requirements:
 
 ```yaml
 environment:
@@ -65,698 +104,713 @@ dev_dependencies:
   test: ^1.31.2
 ```
 
-When generating inside a repo that already depends on `fmodel`, preserve its
-declared version or path dependency.
+When generating inside an existing Dart package, preserve its dependency
+versions, existing platform adapters, and existing composition conventions.
 
-## 2. Shared Domain API
+## 2. Mapping Event Model Concepts
 
-Generate shared domain types in `lib/src/domain/api.dart`.
+Map the table formulas into top-level folders:
 
-### IDs and Value Objects
+| Event Model element | Generated folder | Generated slice |
+| ------------------- | ---------------- | --------------- |
+| Command with produced events | `state_change/<use_case>/` | A command-handling slice |
+| Projection/read model | `state_view/<read_model>/` | A query or read-model slice |
+| Event-to-command policy/process | `automation/<process_or_policy>/` | A saga/process slice |
+| External command, event, or DTO boundary | `translation/<external_boundary>/` | A boundary translation slice |
+| Domain event/value object vocabulary | `bounded_contexts/<bounded_context>/` | Shared cross-slice contracts |
 
-Prefer extension types for simple scalar wrappers:
+Each slice imports one or more bounded-context APIs explicitly. Do not infer
+bounded-context ownership from folder nesting because slice folders are
+top-level category folders.
+
+If slice names would collide across bounded contexts, prefix the slice folder
+name with the bounded-context name, for example `restaurant_create` or
+`ordering_create`.
+
+## 3. Bounded Contexts
+
+Each bounded context owns shared domain contracts only:
+
+```text
+lib/bounded_contexts/restaurant/
+  api.dart
+  value_objects.dart
+  events.dart
+  event_tags.dart
+  serialization.dart
+```
+
+Do not place commands, deciders, handlers, services, UI, repositories, or
+slice-local errors in bounded-context folders.
+
+### `value_objects.dart`
+
+Use extension types for simple scalar wrappers and immutable classes for
+compound values:
 
 ```dart
 extension type const RestaurantId._(String value) {
-  factory RestaurantId(String raw) => RestaurantId._(raw);
-
-  @override
-  String toString() => value;
+  factory RestaurantId(String raw) {
+    if (raw.isEmpty) throw ArgumentError('RestaurantId cannot be empty');
+    return RestaurantId._(raw);
+  }
 }
 
 extension type const RestaurantName._(String value) {
   factory RestaurantName(String raw) => RestaurantName._(raw);
 }
-```
 
-Use small immutable classes when a value object has multiple fields or behavior:
-
-```dart
 final class MenuItem {
   const MenuItem({
-    required this.id,
+    required this.menuItemId,
     required this.name,
     required this.price,
   });
 
-  final MenuItemId id;
+  final MenuItemId menuItemId;
   final MenuItemName name;
-  final Money price;
+  final MenuItemPrice price;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is MenuItem &&
+            menuItemId == other.menuItemId &&
+            name == other.name &&
+            price == other.price;
+  }
+
+  @override
+  int get hashCode => Object.hash(menuItemId, name, price);
 }
 ```
 
-Rules:
+### `events.dart`
 
-- Create one ID type for each unique entity identifier.
-- Use `PascalCaseId` names such as `RestaurantId` and `OrderId`.
-- Use immutable fields and `const` constructors wherever practical.
-- Add equality/hashCode only when classes will be compared in tests and records
-  or extension types are not enough.
-
-### Domain Errors
-
-Use Dart exception types for invariant violations:
+Use sealed event hierarchies and final event classes:
 
 ```dart
+import 'value_objects.dart';
+
+sealed class RestaurantEvent {
+  const RestaurantEvent();
+}
+
+final class RestaurantCreatedEvent extends RestaurantEvent {
+  const RestaurantCreatedEvent({
+    required this.restaurantId,
+    required this.name,
+    required this.menu,
+    this.isFinal = true,
+  });
+
+  final RestaurantId restaurantId;
+  final RestaurantName name;
+  final RestaurantMenu menu;
+  final bool isFinal;
+}
+
+final class RestaurantMenuChangedEvent extends RestaurantEvent {
+  const RestaurantMenuChangedEvent({
+    required this.restaurantId,
+    required this.menu,
+    this.isFinal = true,
+  });
+
+  final RestaurantId restaurantId;
+  final RestaurantMenu menu;
+  final bool isFinal;
+}
+```
+
+When multiple bounded contexts share one event store, generate a minimal shared
+event supertype under `lib/bounded_contexts/` and have each bounded-context event
+base implement it. Keep that supertype free of infrastructure concerns.
+
+### `event_tags.dart`
+
+Generate tag extraction next to the events:
+
+```dart
+import 'events.dart';
+
+typedef EventTag = ({String tag, String value});
+
+String restaurantEventTypeName(RestaurantEvent event) {
+  return switch (event) {
+    RestaurantCreatedEvent() => 'RestaurantCreatedEvent',
+    RestaurantMenuChangedEvent() => 'RestaurantMenuChangedEvent',
+  };
+}
+
+List<EventTag> restaurantEventTags(RestaurantEvent event) {
+  return switch (event) {
+    RestaurantCreatedEvent(:final restaurantId) => [
+      (tag: 'restaurantId', value: restaurantId.value),
+    ],
+    RestaurantMenuChangedEvent(:final restaurantId) => [
+      (tag: 'restaurantId', value: restaurantId.value),
+    ],
+  };
+}
+```
+
+Events that identify multiple entities should return all relevant tags. The
+platform event store may index all non-empty tag subsets.
+
+### `serialization.dart`
+
+Put shared event encode/decode helpers in the bounded context when they are
+stable domain contracts. If a codec is only needed by a specific external
+boundary, put it in `translation/<external_boundary>/` instead.
+
+### `api.dart`
+
+Export the context contract:
+
+```dart
+library;
+
+export 'value_objects.dart';
+export 'events.dart';
+export 'event_tags.dart';
+export 'serialization.dart';
+```
+
+## 4. State Change Slices
+
+Generate one state-change slice for each command cell or cohesive command group:
+
+```text
+lib/state_change/create_restaurant/
+  command.dart
+  state.dart
+  errors.dart
+  decider.dart
+  repository.dart
+  aggregate.dart
+  service.dart
+  handler.dart
+  dto.dart
+  serialization.dart
+  module.dart
+```
+
+The slice owns all command-specific behavior end to end.
+
+### Command, State, Errors
+
+```dart
+// command.dart
+import '../../bounded_contexts/restaurant/api.dart';
+
+final class CreateRestaurantCommand {
+  const CreateRestaurantCommand({
+    required this.restaurantId,
+    required this.name,
+    required this.menu,
+  });
+
+  final RestaurantId restaurantId;
+  final RestaurantName name;
+  final RestaurantMenu menu;
+}
+```
+
+```dart
+// state.dart
+import '../../bounded_contexts/restaurant/api.dart';
+
+final class CreateRestaurantState {
+  const CreateRestaurantState({this.restaurantId});
+
+  final RestaurantId? restaurantId;
+
+  bool get exists => restaurantId != null;
+}
+```
+
+```dart
+// errors.dart
+import '../../bounded_contexts/restaurant/api.dart';
+
 sealed class DomainError implements Exception {
   const DomainError(this.message);
 
   final String message;
 
   @override
-  String toString() => message;
+  String toString() => '$runtimeType: $message';
 }
 
 final class RestaurantAlreadyExistsError extends DomainError {
   const RestaurantAlreadyExistsError(this.restaurantId)
-    : super('Restaurant already exists.');
+    : super('Restaurant already exists');
 
   final RestaurantId restaurantId;
 }
 ```
 
-Common patterns:
+Keep errors in the slice unless the same error is part of a stable cross-slice
+domain contract.
 
-- `{Entity}AlreadyExistsError` for create commands when state already exists.
-- `{Entity}NotFoundError` for commands that require existing state.
-- `{Entity}Already{Status}Error` for idempotent target-state commands when the
-  business wants an error instead of no-op behavior.
-- `{Entity}Not{Status}Error` for commands that require a prerequisite state.
-- `{Thing}NotAvailableError` for validation against related state.
-
-### Commands
-
-Model commands as sealed hierarchies:
-
-```dart
-sealed class RestaurantCommand {
-  const RestaurantCommand();
-}
-
-final class CreateRestaurant extends RestaurantCommand {
-  const CreateRestaurant({
-    required this.restaurantId,
-    required this.name,
-    required this.menu,
-  });
-
-  final RestaurantId restaurantId;
-  final RestaurantName name;
-  final RestaurantMenu menu;
-}
-
-final class ChangeRestaurantMenu extends RestaurantCommand {
-  const ChangeRestaurantMenu({
-    required this.restaurantId,
-    required this.menu,
-  });
-
-  final RestaurantId restaurantId;
-  final RestaurantMenu menu;
-}
-```
-
-Rules:
-
-- Create one command class per command cell.
-- Name classes in imperative form from the sticky note.
-- Group commands under an aggregate-specific sealed superclass when they share
-  state and event streams.
-
-### Events
-
-Model events as sealed hierarchies:
-
-```dart
-sealed class RestaurantEvent {
-  const RestaurantEvent();
-}
-
-final class RestaurantCreated extends RestaurantEvent {
-  const RestaurantCreated({
-    required this.restaurantId,
-    required this.name,
-    required this.menu,
-  });
-
-  final RestaurantId restaurantId;
-  final RestaurantName name;
-  final RestaurantMenu menu;
-}
-
-final class RestaurantMenuChanged extends RestaurantEvent {
-  const RestaurantMenuChanged({
-    required this.restaurantId,
-    required this.menu,
-  });
-
-  final RestaurantId restaurantId;
-  final RestaurantMenu menu;
-}
-```
-
-Rules:
-
-- Create one event class per event cell.
-- Event class names should be past-tense facts.
-- Do not add runtime tag-field metadata by default. In-memory repositories route
-  events by inspecting typed fields.
-- If an event participates in multiple aggregate streams, include all relevant
-  identifier fields as typed properties.
-
-### State
-
-Derive command-side state from invariants and view state from projections:
-
-```dart
-enum RestaurantStatus { active, closed }
-
-final class Restaurant {
-  const Restaurant({
-    required this.restaurantId,
-    required this.name,
-    required this.menu,
-    required this.status,
-  });
-
-  final RestaurantId restaurantId;
-  final RestaurantName name;
-  final RestaurantMenu menu;
-  final RestaurantStatus status;
-
-  Restaurant copyWith({
-    RestaurantName? name,
-    RestaurantMenu? menu,
-    RestaurantStatus? status,
-  }) {
-    return Restaurant(
-      restaurantId: restaurantId,
-      name: name ?? this.name,
-      menu: menu ?? this.menu,
-      status: status ?? this.status,
-    );
-  }
-}
-```
-
-Use nullable state (`Restaurant?`) when an entity can be absent. Use records for
-small combined state only when named classes would not add clarity.
-
-## 3. Deciders
-
-Generate one `Decider<C, S, E>` for each command or cohesive command group.
-Import only the domain library if application APIs are not needed:
-
-```dart
-import 'package:fmodel/domain.dart';
-
-import '../api.dart';
-
-Decider<RestaurantCommand, Restaurant?, RestaurantEvent> restaurantDecider() {
-  return Decider(
-    initialState: null,
-    decide: (command, state) async* {
-      switch (command) {
-        case CreateRestaurant():
-          if (state != null) {
-            return;
-          }
-          yield RestaurantCreated(
-            restaurantId: command.restaurantId,
-            name: command.name,
-            menu: command.menu,
-          );
-        case ChangeRestaurantMenu():
-          if (state == null) {
-            throw RestaurantNotFoundError(command.restaurantId);
-          }
-          yield RestaurantMenuChanged(
-            restaurantId: command.restaurantId,
-            menu: command.menu,
-          );
-      }
-    },
-    evolve: (state, event) {
-      return switch (event) {
-        RestaurantCreated() => Restaurant(
-          restaurantId: event.restaurantId,
-          name: event.name,
-          menu: event.menu,
-          status: RestaurantStatus.active,
-        ),
-        RestaurantMenuChanged() => state?.copyWith(menu: event.menu),
-      };
-    },
-  );
-}
-```
-
-Mapping rules:
-
-- Command type `C`: use a specific command class for a single-command decider,
-  or the sealed command superclass for a cohesive aggregate.
-- State type `S`: derive the minimal state required for validation.
-- Event type `E`: include all events needed by `evolve` to reconstruct state and
-  all events emitted by `decide`.
-- Initial state: use `null` for missing aggregate state or a concrete empty
-  state object for counters, carts, and other always-present models.
-- Idempotent duplicate commands: emit no events by returning from the `async*`
-  body or using `yield* const Stream<Event>.empty()`.
-- Invalid commands: throw a typed `DomainError` only when the model says the
-  action is invalid rather than already applied.
-
-Use Dart pattern matching in `switch` statements. Keep `decide` free of storage,
-transport, clock, random, and framework concerns.
-
-## 4. Views
-
-For each unique Event Modeling projection, generate a `View<S, E>` in
-`lib/src/domain/views/{entity}_view.dart`.
-
-```dart
-import 'package:fmodel/domain.dart';
-
-import '../api.dart';
-
-final class RestaurantViewState {
-  const RestaurantViewState({
-    required this.restaurantId,
-    required this.name,
-    required this.menu,
-  });
-
-  final RestaurantId restaurantId;
-  final RestaurantName name;
-  final RestaurantMenu menu;
-
-  RestaurantViewState copyWith({RestaurantMenu? menu}) {
-    return RestaurantViewState(
-      restaurantId: restaurantId,
-      name: name,
-      menu: menu ?? this.menu,
-    );
-  }
-}
-
-View<RestaurantViewState?, RestaurantEvent> restaurantView() {
-  return View(
-    initialState: null,
-    evolve: (state, event) {
-      return switch (event) {
-        RestaurantCreated() => RestaurantViewState(
-          restaurantId: event.restaurantId,
-          name: event.name,
-          menu: event.menu,
-        ),
-        RestaurantMenuChanged() => state?.copyWith(menu: event.menu),
-      };
-    },
-  );
-}
-```
-
-Mapping rules:
-
-- Collect all formulas where the projection appears on the left side of `<-`.
-- The view event type `E` is the union superclass covering those events.
-- The first creation event usually returns a new state object.
-- Subsequent events update existing state with `copyWith` and preserve state
-  when the projection has not been created.
-- The initial state is usually `null` for entity lookups and an empty collection
-  for list/search projections.
-
-## 5. Application Factories
-
-Generate thin application factories around the domain components and repository
-contracts.
-
-### Event-Sourcing Aggregate
+### Decider
 
 ```dart
 import 'package:fmodel/fmodel.dart';
 
-import '../domain/api.dart';
+import '../../bounded_contexts/restaurant/api.dart';
+import 'command.dart';
+import 'errors.dart';
+import 'state.dart';
 
-typedef RestaurantAggregate = EventSourcingAggregate<
-  RestaurantCommand,
-  Restaurant?,
+final createRestaurantDecider =
+    Decider<CreateRestaurantCommand, CreateRestaurantState, RestaurantEvent>(
+  initialState: const CreateRestaurantState(),
+  decide: (command, state) async* {
+    if (state.exists) {
+      throw RestaurantAlreadyExistsError(command.restaurantId);
+    }
+    yield RestaurantCreatedEvent(
+      restaurantId: command.restaurantId,
+      name: command.name,
+      menu: command.menu,
+    );
+  },
+  evolve: (state, event) {
+    return switch (event) {
+      RestaurantCreatedEvent(:final restaurantId) =>
+        CreateRestaurantState(restaurantId: restaurantId),
+      _ => state,
+    };
+  },
+);
+```
+
+For cross-boundary consistency checks, use a wider event type and fold only the
+events required by the slice. A `place_order` style decider can read restaurant
+events and order events while producing only an order event.
+
+### Repository Adapter
+
+Use fmodel infrastructure interfaces as ports. Slice repositories are adapters
+that translate a command into the exact event-store queries the decider needs:
+
+```dart
+import 'package:fmodel/fmodel.dart';
+
+import '../../bounded_contexts/restaurant/api.dart';
+import '../../platform/event_store/event_store.dart';
+import 'command.dart';
+
+final class CreateRestaurantEventRepository
+    with EventRepositoryDefaults<CreateRestaurantCommand, RestaurantEvent>
+    implements
+        EventRepository<
+          CreateRestaurantCommand,
+          RestaurantEvent,
+          NoMetadata,
+          NoMetadata
+        > {
+  CreateRestaurantEventRepository(this._store);
+
+  final EventStore _store;
+
+  @override
+  Stream<RestaurantEvent> fetchEvents(CreateRestaurantCommand command) {
+    return _store
+        .streamFor(
+          tag: 'restaurantId',
+          value: command.restaurantId.value,
+          eventTypes: [RestaurantCreatedEvent],
+        )
+        .cast<RestaurantEvent>();
+  }
+
+  @override
+  Stream<RestaurantEvent> save(Stream<RestaurantEvent> events) {
+    return _store.append(events).cast<RestaurantEvent>();
+  }
+}
+```
+
+Keep this adapter inside the slice because its event queries are part of the
+use-case boundary.
+
+### Aggregate And Service
+
+```dart
+import 'package:fmodel/fmodel.dart';
+
+import '../../bounded_contexts/restaurant/api.dart';
+import 'command.dart';
+import 'decider.dart';
+import 'repository.dart';
+import 'state.dart';
+
+typedef CreateRestaurantAggregate = EventSourcingAggregate<
+  CreateRestaurantCommand,
+  CreateRestaurantState,
   RestaurantEvent,
   NoMetadata,
   NoMetadata
 >;
 
-RestaurantAggregate restaurantAggregate({
-  required DeciderContract<RestaurantCommand, Restaurant?, RestaurantEvent>
-  decider,
-  required EventRepository<
-    RestaurantCommand,
-    RestaurantEvent,
-    NoMetadata,
-    NoMetadata
-  >
-  eventRepository,
+CreateRestaurantAggregate buildCreateRestaurantAggregate({
+  required CreateRestaurantEventRepository repository,
 }) {
   return createEventSourcingAggregate(
-    decider: decider,
-    eventRepository: eventRepository,
+    decider: createRestaurantDecider,
+    eventRepository: repository,
   );
 }
 ```
 
-### Materialized View
-
 ```dart
-import 'package:fmodel/fmodel.dart';
+import '../../platform/event_store/event_store.dart';
+import 'aggregate.dart';
+import 'repository.dart';
 
-import '../domain/api.dart';
-import '../domain/views/restaurant_view.dart';
+final class CreateRestaurantService {
+  CreateRestaurantService({required EventStore eventStore}) {
+    repository = CreateRestaurantEventRepository(eventStore);
+    aggregate = buildCreateRestaurantAggregate(repository: repository);
+  }
 
-typedef RestaurantMaterializedView = MaterializedView<
-  RestaurantViewState?,
-  RestaurantEvent,
-  NoMetadata
->;
-
-RestaurantMaterializedView restaurantMaterializedView({
-  required View<RestaurantViewState?, RestaurantEvent> view,
-  required ViewStateRepository<
-    RestaurantEvent,
-    RestaurantViewState?,
-    NoMetadata
-  >
-  viewStateRepository,
-}) {
-  return createMaterializedView(
-    view: view,
-    viewStateRepository: viewStateRepository,
-  );
+  late final CreateRestaurantEventRepository repository;
+  late final CreateRestaurantAggregate aggregate;
 }
 ```
 
-Rules:
+### Handlers, DTOs, Serialization, Module
 
-- Application files import `package:fmodel/fmodel.dart`.
-- Keep factories thin; validation belongs in deciders and state projection
-  belongs in views.
-- Use `NoMetadata` by default. Add metadata type parameters only when the user
-  asks for metadata-aware handling.
+- `dto.dart` parses external JSON or UI input into the slice command.
+- `handler.dart` catches slice-local domain errors and returns boundary results.
+- `serialization.dart` registers codecs for events emitted by this slice.
+- `module.dart` registers API/UI/serialization contributions with composition.
 
-## 6. In-Memory Infrastructure
+Follow existing project registries if present. For a new project, generate a
+small `VerticalSlice` contract in `composition/vertical_slice.dart` and let each
+module expose one slice descriptor.
 
-Generate demo repositories in `lib/src/infrastructure/memory/`. They should be
-small, deterministic implementations of `EventRepository` and
-`ViewStateRepository`.
+## 5. State View Slices
 
-### Event Repository
+Generate one state-view slice for each projection/read model:
+
+```text
+lib/state_view/restaurant_view/
+  query.dart
+  state.dart
+  view.dart
+  repository.dart
+  service.dart
+  handler.dart
+  dto.dart
+  module.dart
+```
+
+Default to an ephemeral view that folds events on demand. Generate a
+materialized view only when the user asks for persisted read-model state or the
+existing project already uses materialized views.
+
+### View
 
 ```dart
 import 'package:fmodel/fmodel.dart';
 
-import '../../domain/api.dart';
+import '../../bounded_contexts/restaurant/api.dart';
+import 'state.dart';
 
-final class MemoryRestaurantEventRepository
-    with EventRepositoryDefaults<RestaurantCommand, RestaurantEvent>
-    implements
-        EventRepository<
-          RestaurantCommand,
-          RestaurantEvent,
-          NoMetadata,
-          NoMetadata
-        > {
-  MemoryRestaurantEventRepository([Map<RestaurantId, List<RestaurantEvent>>? events])
-    : _events = events ?? {};
-
-  final Map<RestaurantId, List<RestaurantEvent>> _events;
-
-  @override
-  Stream<RestaurantEvent> fetchEvents(RestaurantCommand command) {
-    return Stream.fromIterable(_events[_restaurantIdOf(command)] ?? const []);
-  }
-
-  @override
-  Stream<RestaurantEvent> save(Stream<RestaurantEvent> events) async* {
-    await for (final event in events) {
-      final restaurantId = _restaurantIdOfEvent(event);
-      _events.putIfAbsent(restaurantId, () => <RestaurantEvent>[]).add(event);
-      yield event;
-    }
-  }
-
-  RestaurantId _restaurantIdOf(RestaurantCommand command) {
-    return switch (command) {
-      CreateRestaurant() => command.restaurantId,
-      ChangeRestaurantMenu() => command.restaurantId,
-    };
-  }
-
-  RestaurantId _restaurantIdOfEvent(RestaurantEvent event) {
+final restaurantView = View<RestaurantViewState?, RestaurantEvent>(
+  initialState: null,
+  evolve: (state, event) {
     return switch (event) {
-      RestaurantCreated() => event.restaurantId,
-      RestaurantMenuChanged() => event.restaurantId,
+      RestaurantCreatedEvent(:final restaurantId, :final name, :final menu) =>
+        RestaurantViewState(
+          restaurantId: restaurantId,
+          name: name,
+          menu: menu,
+        ),
+      RestaurantMenuChangedEvent(:final menu) => state == null
+          ? null
+          : state.copyWith(menu: menu),
     };
-  }
-}
-```
-
-### View State Repository
-
-```dart
-import 'package:fmodel/fmodel.dart';
-
-import '../../domain/api.dart';
-import '../../domain/views/restaurant_view.dart';
-
-final class MemoryRestaurantViewRepository
-    with ViewStateRepositoryDefaults<RestaurantEvent, RestaurantViewState?>
-    implements
-        ViewStateRepository<
-          RestaurantEvent,
-          RestaurantViewState?,
-          NoMetadata
-        > {
-  RestaurantViewState? _state;
-
-  @override
-  Future<RestaurantViewState?> fetchState(RestaurantEvent event) async {
-    return _state;
-  }
-
-  @override
-  Future<RestaurantViewState?> save(RestaurantViewState? state) async {
-    _state = state;
-    return _state;
-  }
-}
-```
-
-Rules:
-
-- Route event streams by typed identifier fields inferred from command and event
-  classes.
-- Use one repository per aggregate stream or view state shape.
-- Keep repositories simple and local to demos. Do not imply production storage
-  semantics.
-
-## 7. Tests
-
-Use `package:test`.
-
-### Optional Decider Test DSL
-
-Generate this helper when there are several decider tests:
-
-```dart
-import 'package:fmodel/domain.dart';
-import 'package:test/test.dart';
-
-extension DeciderTestDsl<C, S, E> on Decider<C, S, E> {
-  GivenEventsWhenStep<C, S, E> givenEvents(Iterable<E> events) {
-    return GivenEventsWhenStep(this, events);
-  }
-}
-
-final class GivenEventsWhenStep<C, S, E> {
-  const GivenEventsWhenStep(this._decider, this._events);
-
-  final Decider<C, S, E> _decider;
-  final Iterable<E> _events;
-
-  GivenEventsThenStep<C, S, E> whenCommand(C command) {
-    return GivenEventsThenStep(_decider, _events, command);
-  }
-}
-
-final class GivenEventsThenStep<C, S, E> {
-  const GivenEventsThenStep(this._decider, this._events, this._command);
-
-  final Decider<C, S, E> _decider;
-  final Iterable<E> _events;
-  final C _command;
-
-  Future<void> thenEvents(Iterable<E> expected) async {
-    final state = _events.fold<S>(
-      _decider.initialState,
-      (state, event) => _decider.evolve(state, event),
-    );
-    final actual = await _decider.decide(_command, state).toList();
-    expect(actual, expected);
-  }
-}
-```
-
-### Optional View Test DSL
-
-```dart
-import 'package:fmodel/domain.dart';
-import 'package:test/test.dart';
-
-extension ViewTestDsl<S, E> on View<S, E> {
-  void givenEventsThenState(Iterable<E> events, S expected) {
-    final actual = events.fold<S>(
-      initialState,
-      (state, event) => evolve(state, event),
-    );
-    expect(actual, expected);
-  }
-}
-```
-
-### Decider Tests
-
-```dart
-import 'package:test/test.dart';
-
-import '../../lib/src/domain/deciders/restaurant_decider.dart';
-import '../fixtures.dart';
-import '../support/decider_test_dsl.dart';
-
-void main() {
-  group('restaurantDecider', () {
-    test('creates a restaurant when none exists', () async {
-      await restaurantDecider()
-          .givenEvents(const <RestaurantEvent>[])
-          .whenCommand(createRestaurant)
-          .thenEvents([restaurantCreated]);
-    });
-
-    test('does not create the same restaurant twice', () async {
-      await restaurantDecider()
-          .givenEvents([restaurantCreated])
-          .whenCommand(createRestaurant)
-          .thenEvents(const <RestaurantEvent>[]);
-    });
-  });
-}
-```
-
-For errors, use `expectLater` against the event stream:
-
-```dart
-await expectLater(
-  restaurantDecider().decide(changeMissingRestaurantMenu, null),
-  emitsError(isA<RestaurantNotFoundError>()),
+  },
 );
 ```
 
-### Application Tests
-
-Test aggregate and materialized-view factories with generated memory
-repositories:
+### Repository And Service
 
 ```dart
-test('aggregate persists emitted events', () async {
-  final aggregate = restaurantAggregate(
-    decider: restaurantDecider(),
-    eventRepository: MemoryRestaurantEventRepository(),
-  );
+import 'package:fmodel/fmodel.dart';
 
-  await expectLater(
-    aggregate.handle(createRestaurant),
-    emitsInOrder([restaurantCreated, emitsDone]),
-  );
+import '../../bounded_contexts/restaurant/api.dart';
+import '../../platform/event_store/event_store.dart';
+
+typedef RestaurantViewQuery = RestaurantId;
+
+final class RestaurantEphemeralViewRepository
+    implements EphemeralViewRepository<RestaurantEvent, RestaurantViewQuery> {
+  RestaurantEphemeralViewRepository(this._store);
+
+  final EventStore _store;
+
+  @override
+  Stream<RestaurantEvent> fetchEvents(RestaurantViewQuery query) {
+    return _store.streamForQueries([
+      (
+        tag: 'restaurantId',
+        value: query.value,
+        eventType: RestaurantCreatedEvent,
+      ),
+      (
+        tag: 'restaurantId',
+        value: query.value,
+        eventType: RestaurantMenuChangedEvent,
+      ),
+    ]).cast<RestaurantEvent>();
+  }
+}
+```
+
+```dart
+import 'package:fmodel/fmodel.dart';
+
+import '../../bounded_contexts/restaurant/api.dart';
+import '../../platform/event_store/event_store.dart';
+import 'repository.dart';
+import 'state.dart';
+import 'view.dart';
+
+final class RestaurantViewService {
+  RestaurantViewService({required EventStore eventStore})
+      : repository = RestaurantEphemeralViewRepository(eventStore) {
+    ephemeralView = createEphemeralView(
+      view: restaurantView,
+      ephemeralViewRepository: repository,
+    );
+  }
+
+  final RestaurantEphemeralViewRepository repository;
+  late final EphemeralView<RestaurantViewState?, RestaurantEvent, RestaurantId>
+      ephemeralView;
+
+  Future<RestaurantViewState?> query(RestaurantId restaurantId) {
+    return ephemeralView.handle(restaurantId);
+  }
+}
+```
+
+Handlers and DTO encoders stay in the same `state_view/<read_model>/` slice.
+
+## 6. Automation Slices
+
+Generate an automation slice for each process policy that reacts to events and
+emits commands or other actions:
+
+```text
+lib/automation/order_payment_policy/
+  saga.dart
+  publisher.dart
+  service.dart
+  handler.dart
+  module.dart
+```
+
+Use `Saga<AR, A>` for event-to-action decisions:
+
+```dart
+import 'package:fmodel/fmodel.dart';
+
+import '../../bounded_contexts/order/api.dart';
+import '../../state_change/mark_order_as_prepared/command.dart';
+
+final markPreparedWhenPaidSaga =
+    saga<OrderEvent, MarkOrderAsPreparedCommand>((event) async* {
+  switch (event) {
+    case OrderPaidEvent(:final orderId):
+      yield MarkOrderAsPreparedCommand(orderId: orderId);
+    default:
+      break;
+  }
 });
 ```
 
-## 8. Fixtures
-
-Generate shared fixtures in `test/fixtures.dart`:
+Use `createSagaManager` when the generated slice needs to publish emitted
+commands through an injected action publisher:
 
 ```dart
-import '../lib/src/domain/api.dart';
+import 'package:fmodel/fmodel.dart';
 
-final restaurantId = RestaurantId('restaurant-1');
-final restaurantName = RestaurantName('Test Restaurant');
-final restaurantMenu = RestaurantMenu(items: [menuItem]);
+import 'saga.dart';
 
-final createRestaurant = CreateRestaurant(
-  restaurantId: restaurantId,
-  name: restaurantName,
-  menu: restaurantMenu,
-);
+final class OrderPaymentPolicyService {
+  OrderPaymentPolicyService({
+    required ActionPublisher<MarkOrderAsPreparedCommand, NoMetadata, NoMetadata>
+        actionPublisher,
+  }) {
+    sagaManager = createSagaManager(
+      saga: markPreparedWhenPaidSaga,
+      actionPublisher: actionPublisher,
+    );
+  }
 
-final restaurantCreated = RestaurantCreated(
-  restaurantId: restaurantId,
-  name: restaurantName,
-  menu: restaurantMenu,
-);
+  late final SagaManager<
+    OrderEvent,
+    MarkOrderAsPreparedCommand,
+    NoMetadata,
+    NoMetadata
+  > sagaManager;
+}
+```
+
+Automation slices may import state-change commands, but they do not own those
+commands. Keep command execution in the target state-change slice.
+
+## 7. Translation Slices
+
+Generate translation slices for external boundaries: imported messages, public
+API DTO variants, partner integrations, legacy event formats, or UI-specific
+anti-corruption mapping.
+
+```text
+lib/translation/public_restaurant_api/
+  dto.dart
+  mapper.dart
+  codec.dart
+  port.dart
+  adapter.dart
+  handler.dart
+  module.dart
 ```
 
 Rules:
 
-- Keep fixtures small and deterministic.
-- Reuse fixtures across decider, view, aggregate, and materialized-view tests.
-- Fixture events must exactly match the events produced by deciders.
+- `dto.dart` contains external shapes and parsing/encoding helpers.
+- `mapper.dart` converts external DTOs to commands, events, queries, or view
+  DTOs.
+- `port.dart` defines external service contracts when the domain must call out.
+- `adapter.dart` implements a port with a concrete client or platform service.
+- Translation slices must not contain business decisions that belong in
+  deciders, views, or sagas.
+- Domain events and value objects stay in `bounded_contexts/<name>/`.
 
-## 9. Barrel Exports
+## 8. Platform And Composition
 
-Export generated API surfaces through concise barrels:
+Use fmodel interfaces as ports and keep generic adapters outside slices.
 
-```dart
-// lib/domain.dart
-library;
-
-export 'src/domain/api.dart';
-export 'src/domain/deciders/restaurant_decider.dart';
-export 'src/domain/views/restaurant_view.dart';
-```
-
-```dart
-// lib/application.dart
-library;
-
-export 'src/application/restaurant_aggregate.dart';
-export 'src/application/restaurant_materialized_view.dart';
-```
+For a new runnable demo, generate a small event-store port under
+`lib/platform/event_store/`:
 
 ```dart
-// lib/infrastructure.dart
-library;
+abstract interface class EventStore {
+  Stream<Object> append(Stream<Object> events);
 
-export 'src/infrastructure/memory/restaurant_event_repository.dart';
-export 'src/infrastructure/memory/restaurant_view_repository.dart';
+  Stream<Object> streamFor({
+    required String tag,
+    required String value,
+    required List<Type> eventTypes,
+  });
+
+  Stream<Object> streamForQueries(
+    List<({String tag, String value, Type eventType})> queries,
+  );
+}
 ```
+
+Generate an in-memory adapter by default. Add SQLite or another persistent
+adapter only when requested or when the target project already has one.
+
+Composition should be the only place that wires all slices:
 
 ```dart
-// lib/fmodel.dart
-library;
+abstract interface class VerticalSlice {
+  String get name;
 
-export 'application.dart';
-export 'domain.dart';
-export 'infrastructure.dart';
+  void registerApi(ApiRegistry registry, AppContext context);
+
+  void registerSerialization(SerializationRegistry registry);
+}
 ```
+
+Each generated `module.dart` registers only its own routes, codecs, and optional
+UI contributions. `composition/slice_registry.dart` imports module files and
+lists all slices.
+
+## 9. Tests
+
+Mirror the top-level source categories under `test/`:
+
+```text
+test/
+  bounded_contexts/
+    restaurant/api_test.dart
+  state_change/
+    create_restaurant/
+      decider_test.dart
+      repository_test.dart
+      handler_test.dart
+  state_view/
+    restaurant_view/
+      view_test.dart
+      repository_test.dart
+      service_test.dart
+  automation/
+    order_payment_policy/
+      saga_test.dart
+      service_test.dart
+  translation/
+    public_restaurant_api/
+      mapper_test.dart
+      codec_test.dart
+```
+
+Use `package:test`. Generate small reusable GWT helpers under `test/platform`
+or `test/support` when there are several slices.
+
+Decider tests should fold given events into state, execute the command, and
+compare emitted events:
+
+```dart
+test('CreateRestaurant - success', () async {
+  await createRestaurantDecider
+      .givenEvents(const <RestaurantEvent>[])
+      .whenCommand(command)
+      .thenEvents([restaurantCreated]);
+});
+```
+
+Repository tests should use the generated in-memory event store and verify that
+the slice repository loads exactly the events needed for its decision.
+
+View tests should use Given/Then event folding:
+
+```dart
+test('RestaurantView - menu changed after creation', () {
+  restaurantView
+      .givenEvents([restaurantCreated, restaurantMenuChanged])
+      .thenState(expectedRestaurantView);
+});
+```
+
+Automation tests should assert emitted commands from saga reactions. Translation
+tests should assert DTO parsing, mapping, and codec round trips.
 
 ## 10. Workflow
 
 1. Parse the user's Event Model diagram into a table, formulas, and Mermaid
    diagram.
-2. Confirm or refine the table before generating code when the diagram is
-   ambiguous.
-3. Generate the shared domain API.
-4. Generate deciders and views from the command/event/projection formulas.
-5. Generate fixtures and tests.
-6. Generate application factories and in-memory repositories.
-7. Update barrel exports.
-8. Run `dart format .`, `dart analyze`, and `dart test` when working in a
-   generated Dart package.
+2. Identify bounded contexts from domain vocabulary and event ownership.
+3. Generate bounded-context contracts first.
+4. Generate state-change slices from command -> event formulas.
+5. Generate state-view slices from projection <- event formulas.
+6. Generate automation slices from event-to-command policies or process notes.
+7. Generate translation slices for external boundaries only when present in the
+   model or requested by the user.
+8. Generate or update platform ports/adapters and composition registries.
+9. Generate mirrored tests.
+10. Run `dart format .`, `dart analyze`, and `dart test` in the generated Dart
+    package when a package exists.
 
-Preserve existing project conventions when adding to an existing package.
+Preserve existing project conventions when adding to an existing package, but do
+not collapse the four top-level slice folders back under bounded contexts.

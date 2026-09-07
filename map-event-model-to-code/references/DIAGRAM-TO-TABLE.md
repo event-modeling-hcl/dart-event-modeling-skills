@@ -16,9 +16,15 @@ Arranged on a timeline from left to right.
 - **E** — Event (red/orange)
 - **P** — Projection (green)
 
-When generating Dart code with `fmodel-dart`, Event Modeling projections map to
-domain `View<S, E>` components and optional application-layer materialized view
-factories.
+When generating Dart code with `fmodel-dart`, map Event Modeling concepts to
+top-level vertical-slice folders:
+
+- Commands become `state_change/<use_case>/` slices.
+- Projections become `state_view/<read_model>/` slices.
+- Event-to-command policies become `automation/<process_or_policy>/` slices.
+- External boundaries become `translation/<external_boundary>/` slices.
+- Shared value objects and domain events become `bounded_contexts/<name>/`
+  contracts.
 
 ## Layout Rules
 
