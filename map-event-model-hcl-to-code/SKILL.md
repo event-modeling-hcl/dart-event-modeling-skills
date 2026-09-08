@@ -1,5 +1,5 @@
 ---
-name: map-event-model-to-code
+name: map-event-model-hcl-to-code
 description: >
   Generate Dart code from Event Modeling HCL (.em.hcl) documents using
   fmodel-dart. Use when the user provides a validated or draft .em.hcl event
