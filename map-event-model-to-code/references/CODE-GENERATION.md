@@ -1,7 +1,9 @@
 # Dart Vertical-Slice Code Generation
 
-This reference covers generating Dart code from an Event Model table. Generated
-code uses `fmodel-dart`, `package:fmodel/fmodel.dart`, and `package:test`.
+This reference covers generating Dart code from the normalized Event Modeling
+HCL generation model described in
+[HCL-TO-MODEL.md](HCL-TO-MODEL.md). Generated code uses `fmodel-dart`,
+`package:fmodel/fmodel.dart`, and `package:test`.
 
 The generated architecture is vertical-slice oriented:
 
@@ -107,17 +109,25 @@ dev_dependencies:
 When generating inside an existing Dart package, preserve its dependency
 versions, existing platform adapters, and existing composition conventions.
 
-## 2. Mapping Event Model Concepts
+## 2. Mapping HCL Blocks
 
-Map the table formulas into top-level folders:
+Map resolved HCL blocks into top-level folders:
 
-| Event Model element | Generated folder | Generated slice |
-| ------------------- | ---------------- | --------------- |
-| Command with produced events | `state_change/<use_case>/` | A command-handling slice |
-| Projection/read model | `state_view/<read_model>/` | A query or read-model slice |
-| Event-to-command policy/process | `automation/<process_or_policy>/` | A saga/process slice |
-| External command, event, or DTO boundary | `translation/<external_boundary>/` | A boundary translation slice |
-| Domain event/value object vocabulary | `bounded_contexts/<bounded_context>/` | Shared cross-slice contracts |
+| HCL source | Generated folder | Generated slice |
+| ---------- | ---------------- | --------------- |
+| `bounded_context` with `aggregate`, `field_type`, and `event` children | `bounded_contexts/<bounded_context>/` | Shared cross-slice contracts |
+| `state_change` workflow and its command(s) | `state_change/<use_case>/` | A command-handling slice |
+| `state_view` workflow read model | `state_view/<read_model>/` | A query/read-model slice |
+| `automation` workflow processor/readmodel reaction | `automation/<process_or_policy>/` | A saga/process slice |
+| `translation` workflow consuming an external event | `translation/<external_boundary>/` | A boundary translation slice |
+
+Use the HCL labels as folder names after collision checks:
+
+- `bounded_context "<name>"` -> `lib/bounded_contexts/<name>/`
+- `state_change "<use_case>"` -> `lib/state_change/<use_case>/`
+- `readmodel "<read_model>"` -> `lib/state_view/<read_model>/`
+- `automation "<process_or_policy>"` -> `lib/automation/<process_or_policy>/`
+- `translation "<external_boundary>"` -> `lib/translation/<external_boundary>/`
 
 Each slice imports one or more bounded-context APIs explicitly. Do not infer
 bounded-context ownership from folder nesting because slice folders are
@@ -126,6 +136,10 @@ top-level category folders.
 If slice names would collide across bounded contexts, prefix the slice folder
 name with the bounded-context name, for example `restaurant_create` or
 `ordering_create`.
+
+Use resolved `from`, `to`, `aggregate`, `aggregate_dependencies`, `fields`, and
+`field` data from the HCL model. Do not invent relationships that are not
+present in the validated HCL references.
 
 ## 3. Bounded Contexts
 
@@ -142,6 +156,12 @@ lib/bounded_contexts/restaurant/
 
 Do not place commands, deciders, handlers, services, UI, repositories, or
 slice-local errors in bounded-context folders.
+
+Generate value objects from bounded-context `field_type` declarations. Generate
+events from bounded-context `event` declarations. Event fields come from
+effective HCL fields after `fields = [...]`, explicit `field` blocks, shorthand
+field resolution, `optional`, `cardinality`, and `subfield` expansion have been
+applied.
 
 ### `value_objects.dart`
 
@@ -279,7 +299,7 @@ export 'serialization.dart';
 
 ## 4. State Change Slices
 
-Generate one state-change slice for each command cell or cohesive command group:
+Generate one state-change slice for each `state_change` workflow by default:
 
 ```text
 lib/state_change/create_restaurant/
@@ -297,6 +317,12 @@ lib/state_change/create_restaurant/
 ```
 
 The slice owns all command-specific behavior end to end.
+
+Generate commands from workflow-local `command` blocks. Use `command.aggregate`
+and `aggregate_dependencies` to decide which event streams the repository
+adapter must fetch. Use `command.to` to determine the concrete bounded-context
+events emitted by the decider. Use `api_endpoint`, incoming `screen.to`, and
+`external_trigger` to generate handler/module wiring.
 
 ### Command, State, Errors
 
@@ -495,7 +521,7 @@ module expose one slice descriptor.
 
 ## 5. State View Slices
 
-Generate one state-view slice for each projection/read model:
+Generate one state-view slice for each `readmodel` block:
 
 ```text
 lib/state_view/restaurant_view/
@@ -512,6 +538,11 @@ lib/state_view/restaurant_view/
 Default to an ephemeral view that folds events on demand. Generate a
 materialized view only when the user asks for persisted read-model state or the
 existing project already uses materialized views.
+
+Use `readmodel.from` to decide which events the repository adapter fetches and
+which events the `View<S, E>` folds. Use `readmodel.question` to name tests and
+to keep the read model's state focused on the answer the HCL asks for. Use
+`readmodel.to` and target screens/API metadata for handler/module wiring.
 
 ### View
 
@@ -603,6 +634,55 @@ final class RestaurantViewService {
 
 Handlers and DTO encoders stay in the same `state_view/<read_model>/` slice.
 
+### Materialized Variant
+
+When the user asks for persisted read-model state, or the existing project
+already uses materialized views, generate a `ViewStateRepository` adapter inside
+the state-view slice and wire it with `createMaterializedView`:
+
+```dart
+import 'package:fmodel/fmodel.dart';
+
+import '../../bounded_contexts/restaurant/api.dart';
+import 'state.dart';
+import 'view.dart';
+
+final class RestaurantViewStateRepository
+    with ViewStateRepositoryDefaults<RestaurantEvent, RestaurantViewState?>
+    implements
+        ViewStateRepository<RestaurantEvent, RestaurantViewState?, NoMetadata> {
+  RestaurantViewStateRepository(this._states);
+
+  final Map<String, RestaurantViewState?> _states;
+
+  @override
+  Future<RestaurantViewState?> fetchState(RestaurantEvent event) async {
+    final key = switch (event) {
+      RestaurantCreatedEvent(:final restaurantId) => restaurantId.value,
+      RestaurantMenuChangedEvent(:final restaurantId) => restaurantId.value,
+    };
+    return _states[key];
+  }
+
+  @override
+  Future<RestaurantViewState?> save(RestaurantViewState? state) async {
+    if (state == null) return null;
+    _states[state.restaurantId.value] = state;
+    return state;
+  }
+}
+
+MaterializedView<RestaurantViewState?, RestaurantEvent, NoMetadata>
+buildRestaurantMaterializedView({
+  required RestaurantViewStateRepository repository,
+}) {
+  return createMaterializedView(
+    view: restaurantView,
+    viewStateRepository: repository,
+  );
+}
+```
+
 ## 6. Automation Slices
 
 Generate an automation slice for each process policy that reacts to events and
@@ -664,8 +744,11 @@ final class OrderPaymentPolicyService {
 }
 ```
 
-Automation slices may import state-change commands, but they do not own those
-commands. Keep command execution in the target state-change slice.
+Build automation slices from `automation` workflows. Use `processor.from` or
+`readmodel.from` to identify action results consumed by the saga, and use
+`processor.to` to identify emitted commands. Automation slices may import
+state-change commands, but they do not own those commands. Keep command
+execution in the target state-change slice.
 
 ## 7. Translation Slices
 
@@ -686,6 +769,8 @@ lib/translation/public_restaurant_api/
 
 Rules:
 
+- Build translation slices from `translation` workflows and external
+  `bounded_context` event sources.
 - `dto.dart` contains external shapes and parsing/encoding helpers.
 - `mapper.dart` converts external DTOs to commands, events, queries, or view
   DTOs.
@@ -798,17 +883,19 @@ tests should assert DTO parsing, mapping, and codec round trips.
 
 ## 10. Workflow
 
-1. Parse the user's Event Model diagram into a table, formulas, and Mermaid
-   diagram.
-2. Identify bounded contexts from domain vocabulary and event ownership.
+1. Validate the `.em.hcl` source when `eventmodeling-hcl` is available.
+2. Build an internal generation inventory from bounded contexts, workflows,
+   resolved references, effective fields, and scenarios.
 3. Generate bounded-context contracts first.
-4. Generate state-change slices from command -> event formulas.
-5. Generate state-view slices from projection <- event formulas.
-6. Generate automation slices from event-to-command policies or process notes.
-7. Generate translation slices for external boundaries only when present in the
-   model or requested by the user.
+4. Generate state-change slices from `state_change` workflows and `command.to`
+   event references.
+5. Generate state-view slices from `readmodel.from` event references.
+6. Generate automation slices from `automation` workflows and emitted command
+   references.
+7. Generate translation slices from `translation` workflows that consume
+   external bounded-context events.
 8. Generate or update platform ports/adapters and composition registries.
-9. Generate mirrored tests.
+9. Generate mirrored tests from workflow-local scenarios.
 10. Run `dart format .`, `dart analyze`, and `dart test` in the generated Dart
     package when a package exists.
 
