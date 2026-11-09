@@ -1,0 +1,14 @@
+{
+  "eval_id": 1,
+  "eval_name": "bloc-serialized-command-handling",
+  "prompt": "I have an fmodel-dart `Decider<TransferMoneyCommand, AccountState, LedgerEvent>` wired into an `EventSourcingAggregate` for a banking feature. Users can fire the \"transfer\" action rapidly and I absolutely cannot let two commands race against the same account's event stream — they must be processed strictly one at a time, in order. I want to use bloc (not a plain cubit) for this screen so I get proper concurrency control and an auditable stream of what the user did. Show me how to build the Bloc: the UI event(s), the state, the handler registration with the right concurrency transformer, and how the handler turns the UI action into the fmodel command and handles the result. Please be careful about naming — in this stack \"event\" is dangerously overloaded and I keep mixing up my ledger events with bloc events.",
+  "assertions": [
+    "Uses an event-driven Bloc with on<E> handler registration (not mapEventToState, which was removed in bloc 8).",
+    "Defines a sealed UI-event hierarchy whose type carries a Ui marker (e.g. TransferUiEvent) with intent-named cases (e.g. TransferSubmitted), explicitly distinct from the domain fact LedgerEvent.",
+    "Applies the sequential() transformer from bloc_concurrency to the command-issuing handler to serialize command processing.",
+    "The handler builds a TransferMoneyCommand and dispatches it to the aggregate/service; it never constructs or emits a LedgerEvent (domain fact) itself.",
+    "Explains why sequential() is the correct transformer here (prevents two commands racing the same aggregate's fetch/decide/save cycle).",
+    "The bloc's state carries a Ui marker and value equality; render/result data comes from the read side, not the write-model AccountState.",
+    "The application service/aggregate is injected via the constructor rather than constructed inside the Bloc."
+  ]
+}

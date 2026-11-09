@@ -1,0 +1,26 @@
+{
+  "skill_name": "fmodel_bloc",
+  "evals": [
+    {
+      "id": 0,
+      "name": "cubit-add-item-wardrobe",
+      "prompt": "I'm building a Flutter wardrobe app on fmodel-dart. My domain layer already exists. In lib/state_change/add_item/api.dart I have `final class AddItemCommand { const AddItemCommand({required this.name, required this.category}); final String name; final String category; }` and a `Decider<AddItemCommand, AddItemState, WardrobeEvent>` called `addItemDecider` that emits `ItemAddedEvent`. On the read side, lib/state_view/wardrobe_view/api.dart has a `View<WardrobeViewState, WardrobeEvent>` called `wardrobeView`, where `WardrobeViewState` holds `List<WardrobeItem> items`. There's an `EventSourcingAggregate` and a `MaterializedView` already created via the fmodel `create...` factories. Please wire an add-item screen's state management as a Cubit: the screen lets the user type a name + category and tap Add, then shows the updated list of items, a loading spinner while adding, and an error message if the domain rejects it. Give me the Cubit, its state class, and how to inject the fmodel service. Keep the naming clean — I don't want to confuse my domain events with anything on the UI side.",
+      "expected_output": "A Cubit named AddItemCubit whose state is AddItemUiState (with a status enum: initial/loading/success/failure) using Equatable. UI-side types carry a Ui marker; domain types (AddItemCommand, ItemAddedEvent, WardrobeViewState) keep their fmodel names and are imported, not redefined. A method (e.g. addItem) builds an AddItemCommand, calls the injected application service/aggregate handle(), reads the WardrobeViewState from the read side, and emits a new AddItemUiState. UiState render data comes from the read-model View projection, NOT the Decider state. Service injected via constructor / RepositoryProvider. No bare AddItemEvent/AddItemState in presentation code.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "bloc-serialized-command-handling",
+      "prompt": "I have an fmodel-dart `Decider<TransferMoneyCommand, AccountState, LedgerEvent>` wired into an `EventSourcingAggregate` for a banking feature. Users can fire the \"transfer\" action rapidly and I absolutely cannot let two commands race against the same account's event stream — they must be processed strictly one at a time, in order. I want to use bloc (not a plain cubit) for this screen so I get proper concurrency control and an auditable stream of what the user did. Show me how to build the Bloc: the UI event(s), the state, the handler registration with the right concurrency transformer, and how the handler turns the UI action into the fmodel command and handles the result. Please be careful about naming — in this stack \"event\" is dangerously overloaded and I keep mixing up my ledger events with bloc events.",
+      "expected_output": "An event-driven Bloc using on<E> handlers registered with transformer: sequential() from bloc_concurrency to serialize command handling. A sealed <Screen>UiEvent hierarchy whose case names describe the INTENT (e.g. TransferSubmitted), explicitly distinct from the domain fact LedgerEvent. A <Screen>UiState with Equatable + status enum. The handler builds a TransferMoneyCommand, awaits the injected aggregate/service handle(command), maps result/read-model to UiState, and maps DomainError to a failure state. The bloc never emits or handles LedgerEvent (domain fact). Explanation of why sequential() is the right transformer here. Naming: UiEvent/UiState markers on presentation, domain names untouched.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "untangle-name-collision",
+      "prompt": "Help me untangle this mess. In my fmodel + flutter_bloc project I have a `class AddItemEvent` in my bloc file AND an `ItemAddedEvent` domain event from my decider, plus an `AddItemState` in the bloc and an `AddItemState` write-model state in my decider. My teammates can't tell which is which and code review is painful. My bloc's AddItemEvent handler currently constructs the domain ItemAddedEvent directly and I think that's wrong. Explain what each of these things actually is, tell me exactly what to rename and what to leave alone, and show the corrected bloc + state where the UI intent flows to the domain the right way. I want a rule I can apply everywhere, not just a one-off fix.",
+      "expected_output": "A clear explanation of the collision: bloc event = UI intent (maps to a Command), domain event = fact (ItemAddedEvent). Rename presentation types to carry Ui markers (AddItemEvent -> AddItemUiEvent, the bloc's AddItemState -> AddItemUiState); leave domain types (ItemAddedEvent, the decider's AddItemState) unchanged. Identify the bug: the bloc handler should build/dispatch an AddItemCommand and let the aggregate emit ItemAddedEvent — the bloc must NOT construct the domain event itself. Provide the corrected bloc showing intent -> AddItemCommand -> service.handle -> UiState from the read-side projection. State a reusable naming rule (domain keeps fmodel names, presentation carries Ui).",
+      "files": []
+    }
+  ]
+}

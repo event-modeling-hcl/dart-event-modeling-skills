@@ -1,0 +1,26 @@
+{
+  "skill_name": "map-state-view-hcl-to-code",
+  "evals": [
+    {
+      "id": 0,
+      "name": "pet-directory-ephemeral",
+      "prompt": "Bounded contexts and the event store port already exist. Generate the Dart code for this read model:\n\n```hcl\nstate_view \"pet_directory\" {\n  readmodel \"pet_directory\" {\n    question = \"Which pets does the clinic know?\"\n    from     = [event.clinic.pet_registered, event.clinic.external_pet_imported]\n    fields   = [field_type.clinic.pet_id, field_type.clinic.pet_name]\n    to       = [screen.pet_list]\n  }\n  screen \"pet_list\" {}\n  scenario \"registered_pet_is_listed\" {\n    given { event = event.clinic.pet_registered }\n    then  { readmodel = readmodel.pet_directory }\n  }\n}\n```",
+      "expected_output": "Creates lib/slices/pet_directory/ with query.dart, state.dart (read-model state with value equality), view.dart (View that folds only PetRegisteredEvent and ExternalPetImportedEvent), repository.dart (EphemeralViewRepository, because the user did not ask for stored state), service.dart using createEphemeralView, dto.dart, handler.dart, module.dart. Does not import other slices. Tests use the question text in names, fold the given events to the then read model, and include the view-fold law; the ignores-unconsumed-events law is generated only if the View accepts a wider event type, else a comment explains the skip. Does not create lib/state_view/.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "pet-directory-materialized",
+      "prompt": "Same pet_directory read model as before, but I need the directory state persisted and updated on each event instead of folding on every query:\n\n```hcl\nstate_view \"pet_directory\" {\n  readmodel \"pet_directory\" {\n    question = \"Which pets does the clinic know?\"\n    from     = [event.clinic.pet_registered, event.clinic.external_pet_imported]\n    fields   = [field_type.clinic.pet_id, field_type.clinic.pet_name]\n    to       = [screen.pet_list]\n  }\n  screen \"pet_list\" {}\n  scenario \"registered_pet_is_listed\" {\n    given { event = event.clinic.pet_registered }\n    then  { readmodel = readmodel.pet_directory }\n  }\n}\n```",
+      "expected_output": "Generates the materialized variant: a ViewStateRepository adapter inside lib/slices/pet_directory/ and a builder that uses createMaterializedView. Keeps the View and the state as in the ephemeral case. Does not add a database adapter unless asked.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "open-bookings-empty-history-api",
+      "prompt": "Bounded contexts and the event store port already exist. Generate the Dart code for this workflow:\n\n```hcl\nstate_view \"open_bookings\" {\n  readmodel \"open_bookings\" {\n    question = \"Which bookings are open?\"\n    fields   = [field_type.booking.booking_id, field_type.booking.guest_name]\n    from     = [event.booking.booking_opened, event.booking.booking_canceled]\n    to       = [screen.open_bookings_response]\n  }\n\n  screen \"open_bookings_response\" {\n    kind         = \"api\"\n    api_endpoint = \"GET /bookings/open\"\n    fields       = [field_type.booking.booking_id, field_type.booking.guest_name]\n  }\n\n  field_source {\n    inputs = [event.booking.booking_opened.field.guest_name]\n    target = readmodel.open_bookings.field.guest_name\n  }\n\n  scenario \"no_booking_yet\" {\n    empty_history = true\n    then {\n      expect_empty_list = true\n      readmodel         = readmodel.open_bookings\n    }\n  }\n\n  scenario \"opened_booking_appears\" {\n    case = \"appear\"\n    given { event = event.booking.booking_opened }\n    then  { readmodel = readmodel.open_bookings }\n  }\n\n  scenario \"canceled_booking_disappears\" {\n    case = \"disappear\"\n    given { event = event.booking.booking_opened }\n    given { event = event.booking.booking_canceled }\n    then {\n      expect_empty_list = true\n      readmodel         = readmodel.open_bookings\n    }\n  }\n}\n```",
+      "expected_output": "Creates lib/slices/open_bookings/ (not lib/state_view/). The read-model state is a list with value equality whose initial state is the empty list. The View folds only BookingOpenedEvent (adds an item; guestName comes from the event field guest_name as the field_source states) and BookingCanceledEvent (removes the item). bookingId has no field_source, so the mapping copies the same-named field and the report lists it as inferred. handler.dart holds the API route GET /bookings/open because the screen kind is api; no ui/ folder. Tests in test/slices/open_bookings/: the empty_history scenario checks the initial state of the View with no given events; the appear and disappear scenarios are grouped by case; expect_empty_list compares with the empty list.",
+      "files": []
+    }
+  ]
+}

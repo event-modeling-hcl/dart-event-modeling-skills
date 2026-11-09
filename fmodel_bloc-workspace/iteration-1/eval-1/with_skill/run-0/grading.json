@@ -1,0 +1,46 @@
+{
+  "run_id": "eval-1-with_skill",
+  "expectations": [
+    {
+      "text": "Uses an event-driven Bloc with on<E> handler registration",
+      "passed": true,
+      "evidence": "TransferBloc registers on<TransferSubmitted>/on<AccountOverviewRequested>."
+    },
+    {
+      "text": "Sealed Ui-marked UiEvent with intent-named cases, distinct from domain LedgerEvent",
+      "passed": true,
+      "evidence": "sealed TransferUiEvent { TransferSubmitted, ... }; documented as never LedgerEvent."
+    },
+    {
+      "text": "sequential() transformer applied to the command handler",
+      "passed": true,
+      "evidence": "on<TransferSubmitted>(_onTransferSubmitted, transformer: sequential())."
+    },
+    {
+      "text": "Handler builds TransferMoneyCommand and never constructs/emits LedgerEvent",
+      "passed": true,
+      "evidence": "Handler builds TransferMoneyCommand via service; no LedgerEvent constructed in the bloc."
+    },
+    {
+      "text": "Explains why sequential() is correct here",
+      "passed": true,
+      "evidence": "RESPONSE.md has a transformer comparison table and the race-prevention rationale."
+    },
+    {
+      "text": "State carries Ui marker + value equality; render data from the read side, not write-model AccountState",
+      "passed": true,
+      "evidence": "TransferUiState holds `AccountViewState? account` (read side); Equatable; TransferStatus enum."
+    },
+    {
+      "text": "Application service injected via constructor rather than constructed inside the Bloc",
+      "passed": true,
+      "evidence": "AccountService injected; built at composition root with RepositoryProvider/BlocProvider."
+    }
+  ],
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 7,
+    "failed": 0,
+    "total": 7
+  }
+}

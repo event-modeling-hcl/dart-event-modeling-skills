@@ -1,0 +1,23 @@
+[
+  {"query": "I've got a Decider<AddItemCommand, CartState, CartEvent> and a MaterializedView in my fmodel-dart wardrobe app. how do I actually drive this from a cubit on my add-item screen without my ItemAddedEvent clashing with a bloc event?", "should_trigger": true},
+  {"query": "hook my fmodel decider up to the flutter UI", "should_trigger": true},
+  {"query": "my AddItemEvent (bloc) and ItemAddedEvent (decider) are getting mixed up and code review is a nightmare, can you help me straighten out the naming?", "should_trigger": true},
+  {"query": "building a flutter app on event sourcing with fmodel-dart. want to use flutter_bloc for the presentation layer. what's the clean way to name things so domain events and bloc events don't collide?", "should_trigger": true},
+  {"query": "users spam the transfer button and I can't let two TransferMoneyCommands race the fmodel aggregate. I'm using bloc — how do I wire the aggregate in with serialized command handling?", "should_trigger": true},
+  {"query": "should I use a Cubit or a Bloc to call my fmodel EventSourcingAggregate.handle(), and how do I keep the bloc's UiState separate from the decider's state?", "should_trigger": true},
+  {"query": "my flutter_bloc state is currently just the raw fmodel decider state and it feels wrong. how should the bloc state relate to the read-model / View projection?", "should_trigger": true},
+  {"query": "connecting an fmodel View to a BlocBuilder — what should the bloc actually emit, the WardrobeViewState or something else?", "should_trigger": true},
+  {"query": "we use fmodel-dart for CQRS and flutter_bloc for the ui, and the team keeps confusing 'state' between the aggregate and the bloc. is there a naming convention that fixes this for good?", "should_trigger": true},
+  {"query": "how do I test a bloc that dispatches fmodel commands with bloc_test while faking the aggregate/service?", "should_trigger": true},
+
+  {"query": "how do I generate the fmodel-dart Decider and View code from my orders.em.hcl event model?", "should_trigger": false},
+  {"query": "my flutter_bloc counter isn't rebuilding when I emit a new state — what's wrong with my BlocBuilder?", "should_trigger": false},
+  {"query": "explain the difference between a Cubit and a Bloc in flutter_bloc", "should_trigger": false},
+  {"query": "how do I combine two fmodel-dart Deciders with combineViaTuples so they share a command supertype?", "should_trigger": false},
+  {"query": "I'm using Riverpod for state management in my Flutter app and want to connect it to my domain layer — what's the cleanest wiring?", "should_trigger": false},
+  {"query": "write me an fmodel-dart Decider for a shopping cart with add-item and remove-item commands", "should_trigger": false},
+  {"query": "what's a good feature-folder structure for a plain flutter_bloc app with auth, home, and settings?", "should_trigger": false},
+  {"query": "can you explain how event sourcing and CQRS work conceptually, with a diagram?", "should_trigger": false},
+  {"query": "my dart analyze is failing with 'The class X can't be extended outside its library' on a sealed bloc event — how do I fix it?", "should_trigger": false},
+  {"query": "how do I set up bloc_concurrency's droppable transformer for a search-as-you-type feature?", "should_trigger": false}
+]

@@ -1,0 +1,41 @@
+{
+  "run_id": "eval-2-without_skill",
+  "expectations": [
+    {
+      "text": "Explains the collision: bloc event = UI intent (maps to Command); domain event (ItemAddedEvent) = fact",
+      "passed": true,
+      "evidence": "RESPONSE.md explains each of the four types and the intent-vs-fact distinction."
+    },
+    {
+      "text": "Recommends renaming presentation types to Ui markers (AddItemEvent->AddItemUiEvent, bloc AddItemState->AddItemUiState)",
+      "passed": false,
+      "evidence": "Renamed to AddItemRequested and AddItemViewState instead \u2014 no `Ui` marker; invented a different convention."
+    },
+    {
+      "text": "Says to leave domain types unchanged (ItemAddedEvent and decider's write-model AddItemState)",
+      "passed": false,
+      "evidence": "Renamed the decider's write-model AddItemState -> ItemState, i.e. renamed a domain type \u2014 exactly what the skill forbids (also breaks alignment with the upstream code-gen skill)."
+    },
+    {
+      "text": "Identifies the bug: bloc must dispatch AddItemCommand; must not construct ItemAddedEvent",
+      "passed": true,
+      "evidence": "Correctly diagnoses the bloc constructing ItemAddedEvent as bypassing decide()."
+    },
+    {
+      "text": "Shows corrected bloc: intent -> AddItemCommand -> service.handle -> UiState from read-side projection",
+      "passed": true,
+      "evidence": "Corrected bloc routes AddItemRequested -> AddItemCommand -> aggregate.handle; though it folds returned domain events into AddItemViewState in the bloc rather than reading a separate View projection."
+    },
+    {
+      "text": "States a reusable, generalizable naming rule (domain keeps fmodel names; presentation carries Ui)",
+      "passed": true,
+      "evidence": "Gives a reusable rule, but a role-based one (rename both layers, `as domain` prefix) that renames domain types rather than the skill's domain-untouched + Ui-marker rule."
+    }
+  ],
+  "summary": {
+    "pass_rate": 0.6667,
+    "passed": 4,
+    "failed": 2,
+    "total": 6
+  }
+}

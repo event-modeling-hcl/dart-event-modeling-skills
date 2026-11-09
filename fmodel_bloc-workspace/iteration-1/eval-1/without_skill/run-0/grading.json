@@ -1,0 +1,46 @@
+{
+  "run_id": "eval-1-without_skill",
+  "expectations": [
+    {
+      "text": "Uses an event-driven Bloc with on<E> handler registration",
+      "passed": true,
+      "evidence": "TransferBloc registers on<TransferSubmitted>."
+    },
+    {
+      "text": "Sealed Ui-marked UiEvent with intent-named cases, distinct from domain LedgerEvent",
+      "passed": true,
+      "evidence": "sealed TransferUiEvent with TransferSubmitted/TransferResultAcknowledged; distinct from LedgerEvent (prompt strongly hinted the concern)."
+    },
+    {
+      "text": "sequential() transformer applied to the command handler",
+      "passed": true,
+      "evidence": "on<TransferSubmitted>(..., transformer: sequential()); smoke-tested strictly ordered."
+    },
+    {
+      "text": "Handler builds TransferMoneyCommand and never constructs/emits LedgerEvent",
+      "passed": true,
+      "evidence": "Command constructed only in the service; bloc never constructs LedgerEvent."
+    },
+    {
+      "text": "Explains why sequential() is correct here",
+      "passed": true,
+      "evidence": "RESPONSE.md explains sequential() vs droppable/restartable/concurrent and the race."
+    },
+    {
+      "text": "State carries Ui marker + value equality; render data from the read side, not write-model AccountState",
+      "passed": false,
+      "evidence": "TransferUiState.history is a DTO derived from the command's returned LedgerEvents (write-side result), not a query-side View projection; diverges from the read-model rule."
+    },
+    {
+      "text": "Application service injected via constructor rather than constructed inside the Bloc",
+      "passed": true,
+      "evidence": "buildTransferBloc composition root injects the service."
+    }
+  ],
+  "summary": {
+    "pass_rate": 0.8571,
+    "passed": 6,
+    "failed": 1,
+    "total": 7
+  }
+}

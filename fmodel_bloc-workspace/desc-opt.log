@@ -1,0 +1,30 @@
+Split: 12 train, 8 test (holdout=0.4)
+
+============================================================
+Iteration 1/5
+Description: Wire an fmodel-dart domain layer (Decider, View, Saga, aggregates) into a Flutter UI built with bloc / flutter_bloc, cleanly and without terminology collision. Use whenever the user is combining fmodel (fmodel-dart) with bloc or cubit, asks to connect a Decider/View/aggregate to a Bloc/Cubit, mentions flutter_bloc on top of event sourcing or CQRS, or is confused because "event" and "state" mean different things in bloc than in their domain (Bloc Event vs Domain Event, Bloc State vs Aggregate State). Reach for this skill even when the user only says "hook my decider up to the UI" or "my AddItemEvent and ItemAddedEvent are getting mixed up".
+============================================================
+Train: 19/36 correct, precision=100% recall=6% accuracy=53% (39.3s)
+  [FAIL] rate=1/3 expected=True: should I use a Cubit or a Bloc to call my fmodel EventSourci
+  [FAIL] rate=0/3 expected=True: how do I test a bloc that dispatches fmodel commands with bl
+  [FAIL] rate=0/3 expected=True: my flutter_bloc state is currently just the raw fmodel decid
+  [FAIL] rate=0/3 expected=True: users spam the transfer button and I can't let two TransferM
+  [FAIL] rate=0/3 expected=True: I've got a Decider<AddItemCommand, CartState, CartEvent> and
+  [FAIL] rate=0/3 expected=True: hook my fmodel decider up to the flutter UI
+  [PASS] rate=0/3 expected=False: my flutter_bloc counter isn't rebuilding when I emit a new s
+  [PASS] rate=0/3 expected=False: my dart analyze is failing with 'The class X can't be extend
+  [PASS] rate=0/3 expected=False: can you explain how event sourcing and CQRS work conceptuall
+  [PASS] rate=0/3 expected=False: how do I generate the fmodel-dart Decider and View code from
+  [PASS] rate=0/3 expected=False: what's a good feature-folder structure for a plain flutter_b
+  [PASS] rate=0/3 expected=False: how do I set up bloc_concurrency's droppable transformer for
+Test : 12/24 correct, precision=100% recall=0% accuracy=50% (0.0s)
+  [FAIL] rate=0/3 expected=True: connecting an fmodel View to a BlocBuilder — what should the
+  [FAIL] rate=0/3 expected=True: building a flutter app on event sourcing with fmodel-dart. w
+  [FAIL] rate=0/3 expected=True: my AddItemEvent (bloc) and ItemAddedEvent (decider) are gett
+  [FAIL] rate=0/3 expected=True: we use fmodel-dart for CQRS and flutter_bloc for the ui, and
+  [PASS] rate=0/3 expected=False: how do I combine two fmodel-dart Deciders with combineViaTup
+  [PASS] rate=0/3 expected=False: write me an fmodel-dart Decider for a shopping cart with add
+  [PASS] rate=0/3 expected=False: explain the difference between a Cubit and a Bloc in flutter
+  [PASS] rate=0/3 expected=False: I'm using Riverpod for state management in my Flutter app an
+
+Improving description...
